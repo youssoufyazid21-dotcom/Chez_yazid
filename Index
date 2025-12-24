@@ -1,0 +1,522 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Utensils, Calendar, Clock, MapPin, Phone, Mail, Instagram, 
+  Facebook, Trash2, Plus, LogOut, Star, CheckCircle, ChefHat, 
+  Share2, TrendingUp, Bell, Copy, Menu as MenuIcon, X, Shield, 
+  Settings, Users, ShoppingBag, Globe
+} from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getFirestore, collection, addDoc, onSnapshot, doc, 
+  deleteDoc, query, orderBy, setDoc, updateDoc 
+} from 'firebase/firestore';
+import { 
+  getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged 
+} from 'firebase/auth';
+
+// --- INITIALISATION FIREBASE ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'chez-yazid-final-ultra';
+
+// --- CONFIGURATION ---
+const ADMIN_PASS = "yarna4108";
+const SENEGAL_FLAG_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fd/Flag_of_Senegal.svg/1200px-Flag_of_Senegal.svg.png";
+
+const INITIAL_MENU = [
+  {
+    id: 'malhati',
+    name: "Malhati",
+    description: "Malhati amie que j'aime bien",
+    image: SENEGAL_FLAG_URL,
+    price: "0",
+    category: "Spécial",
+    rating: 5,
+    isSpecial: true
+  },
+  {
+    id: 'plat-1',
+    name: "Grillade Signature Yazid",
+    description: "Viande d'exception marinée selon la recette secrète de Yazid.",
+    image: "https://content.instructables.com/F00/02CC/F36BE39D/F0002CCF36BE39D.jpg",
+    price: "🐭",
+    category: "Plats",
+    rating: 5
+  },
+  {
+    id: 'plat-2',
+    name: "L'Assiette Gourmande",
+    description: "Un mélange de saveurs authentiques servi avec passion.",
+    image: "https://content.instructables.com/FB1/F624/C9100A44/FB1F624C9100A44.jpg",
+    price: "🐭",
+    category: "Plats",
+    rating: 5
+  }
+];
+
+// --- COMPOSANTS UI ---
+
+const Toast = ({ message, type }) => (
+  <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[999] px-8 py-4 rounded-full shadow-2xl flex items-center gap-3 animate-bounce-in ${type === 'success' ? 'bg-green-600 text-white' : 'bg-black text-[#D4AF37]'}`}>
+    {type === 'success' ? <CheckCircle size={20}/> : <Bell size={20}/>}
+    <p className="font-bold text-sm">{message}</p>
+  </div>
+);
+
+// --- ESPACE ADMINISTRATION COMPLET ---
+
+const AdminPanel = ({ bookings, menu, onExit }) => {
+  const [activeSubTab, setActiveSubTab] = useState('overview');
+  const [toast, setToast] = useState(null);
+
+  const showToast = (msg, type = 'info') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#F4F7FE] flex flex-col md:flex-row font-sans">
+      {toast && <Toast message={toast.msg} type={toast.type} />}
+      
+      {/* Sidebar Admin */}
+      <aside className="w-full md:w-80 bg-[#111C44] text-white p-8 flex flex-col">
+        <div className="flex items-center gap-4 mb-12">
+          <div className="p-3 bg-blue-500 rounded-2xl shadow-lg shadow-blue-500/30">
+            <Shield size={24} />
+          </div>
+          <div>
+            <h2 className="font-bold text-xl tracking-tight">Espace Yazid</h2>
+            <p className="text-blue-300 text-[10px] font-black uppercase tracking-widest">Contrôle Total</p>
+          </div>
+        </div>
+
+        <nav className="flex-1 space-y-3">
+          {[
+            { id: 'overview', label: 'Dashboard', icon: TrendingUp },
+            { id: 'reservations', label: 'Réservations', icon: Calendar },
+            { id: 'menu-mgt', label: 'Gestion Carte', icon: Utensils },
+            { id: 'customers', label: 'Clients', icon: Users },
+            { id: 'settings', label: 'Paramètres', icon: Settings }
+          ].map(tab => (
+            <button 
+              key={tab.id}
+              onClick={() => setActiveSubTab(tab.id)}
+              className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all ${activeSubTab === tab.id ? 'bg-white/10 text-white border-l-4 border-blue-500 font-bold' : 'text-gray-400 hover:bg-white/5'}`}
+            >
+              <tab.icon size={20} /> {tab.label}
+            </button>
+          ))}
+        </nav>
+
+        <button onClick={onExit} className="mt-8 flex items-center gap-3 p-4 text-red-400 hover:bg-red-500/10 rounded-2xl transition-all font-bold">
+          <LogOut size={20} /> Déconnexion
+        </button>
+      </aside>
+
+      {/* Main Admin Content */}
+      <main className="flex-1 p-8 md:p-12 overflow-y-auto">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-[#1B2559]">Bienvenue, Chef Yazid</h1>
+            <p className="text-gray-400 text-sm">Gérez votre empire culinaire depuis Villeurbanne.</p>
+          </div>
+          <div className="flex gap-4">
+            <div className="bg-white p-4 rounded-3xl shadow-sm flex items-center gap-3">
+              <Globe className="text-blue-500" size={20}/>
+              <span className="text-xs font-bold text-[#1B2559]">Site: En Ligne</span>
+            </div>
+          </div>
+        </header>
+
+        {activeSubTab === 'overview' && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-gray-100">
+              <p className="text-gray-400 text-[10px] font-black uppercase mb-4 tracking-widest">Réservations</p>
+              <h3 className="text-5xl font-bold text-[#1B2559]">{bookings.length}</h3>
+              <p className="text-green-500 text-xs mt-4 font-bold">+12% cette semaine</p>
+            </div>
+            <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-gray-100">
+              <p className="text-gray-400 text-[10px] font-black uppercase mb-4 tracking-widest">Plats Actifs</p>
+              <h3 className="text-5xl font-bold text-[#1B2559]">{menu.length}</h3>
+              <p className="text-blue-500 text-xs mt-4 font-bold">1 Produit Spécial (Malhati)</p>
+            </div>
+            <div className="bg-[#1B2559] p-8 rounded-[2rem] shadow-xl text-white">
+              <p className="text-white/40 text-[10px] font-black uppercase mb-4 tracking-widest">Statut Serveur</p>
+              <h3 className="text-2xl font-bold flex items-center gap-3"><CheckCircle className="text-green-400"/> Opérationnel</h3>
+              <p className="text-white/60 text-xs mt-4 italic">Bases de données synchronisées</p>
+            </div>
+          </div>
+        )}
+
+        {activeSubTab === 'reservations' && (
+          <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden">
+            <table className="w-full text-left">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="p-6 text-[10px] font-black uppercase text-gray-400">Client</th>
+                  <th className="p-6 text-[10px] font-black uppercase text-gray-400">Détails</th>
+                  <th className="p-6 text-[10px] font-black uppercase text-gray-400">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {bookings.map(b => (
+                  <tr key={b.id} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="p-6">
+                      <p className="font-bold text-[#1B2559]">{b.name}</p>
+                      <p className="text-xs text-gray-400">{b.email}</p>
+                    </td>
+                    <td className="p-6">
+                      <div className="flex gap-4 text-xs font-bold text-gray-500">
+                        <span className="flex items-center gap-1"><Calendar size={14}/> {b.date}</span>
+                        <span className="flex items-center gap-1"><Clock size={14}/> {b.time}</span>
+                        <span className="flex items-center gap-1 text-blue-500"><Users size={14}/> {b.guests} pers.</span>
+                      </div>
+                    </td>
+                    <td className="p-6">
+                      <button onClick={() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'bookings', b.id))} className="text-red-400 hover:bg-red-50 p-3 rounded-xl transition-all"><Trash2 size={18}/></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {activeSubTab === 'menu-mgt' && (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {menu.map(item => (
+              <div key={item.id} className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 flex items-center gap-4">
+                <img src={item.image} className="w-16 h-16 rounded-2xl object-cover" alt={item.name}/>
+                <div className="flex-1">
+                  <h4 className="font-bold text-[#1B2559] text-sm">{item.name}</h4>
+                  <p className="text-blue-500 font-bold text-xs">{item.price === "0" ? "0€ (Spécial)" : "🐭"}</p>
+                </div>
+                {!item.isSpecial && (
+                  <button onClick={() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'menu', item.id))} className="text-gray-200 hover:text-red-500 transition-all"><Trash2 size={18}/></button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+};
+
+// --- SITE PUBLIC ---
+
+export default function App() {
+  const [view, setView] = useState('home');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loginModal, setLoginModal] = useState(false);
+  const [password, setPassword] = useState('');
+  const [user, setUser] = useState(null);
+  const [menu, setMenu] = useState([]);
+  const [bookings, setBookings] = useState([]);
+  const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token);
+        else await signInAnonymously(auth);
+      } catch(e) {}
+    };
+    init();
+    onAuthStateChanged(auth, setUser);
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const unsubMenu = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'menu')), snap => {
+      if (snap.empty) {
+        INITIAL_MENU.forEach(item => addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'menu'), item));
+      } else {
+        setMenu(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      }
+    });
+    const unsubBook = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'bookings')), snap => {
+      setBookings(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => { unsubMenu(); unsubBook(); };
+  }, [user]);
+
+  const handleBooking = async (e) => {
+    e.preventDefault();
+    const data = new FormData(e.target);
+    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'bookings'), {
+      name: data.get('name'), email: data.get('email'), date: data.get('date'),
+      time: data.get('time'), guests: data.get('guests'), createdAt: new Date().toISOString()
+    });
+    setToast({ msg: "Réservation confirmée par email ! 🐭", type: 'success' });
+    setTimeout(() => { setToast(null); setView('home'); }, 3000);
+  };
+
+  if (isAdmin) return <AdminPanel bookings={bookings} menu={menu} onExit={() => setIsAdmin(false)} />;
+
+  return (
+    <div className="min-h-screen bg-white font-sans selection:bg-[#D4AF37] selection:text-black">
+      {toast && <Toast message={toast.msg} type={toast.type} />}
+
+      {/* Navigation Flottante */}
+      <nav className="fixed top-6 left-1/2 -translate-x-1/2 z-[200] w-[92%] max-w-5xl">
+        <div className="bg-[#1A1A1A]/95 backdrop-blur-2xl rounded-[2.5rem] px-8 py-5 flex justify-between items-center shadow-2xl border border-white/10">
+          <div className="flex items-center gap-3 cursor-pointer group" onClick={() => setView('home')}>
+            <div className="bg-[#D4AF37] p-2.5 rounded-2xl text-black shadow-lg group-hover:scale-110 transition-transform"><ChefHat size={22}/></div>
+            <span className="text-white font-bold tracking-tighter text-2xl uppercase italic">Chez <span className="text-[#D4AF37]">Yazid</span></span>
+          </div>
+          <div className="hidden lg:flex gap-10">
+            {[
+              { id: 'home', label: 'Accueil' },
+              { id: 'menu', label: 'La Carte' },
+              { id: 'booking', label: 'Réservation' },
+              { id: 'contact', label: 'Contact' }
+            ].map(link => (
+              <button 
+                key={link.id} 
+                onClick={() => setView(link.id)} 
+                className={`text-[10px] font-black uppercase tracking-[0.3em] transition-all hover:text-white ${view === link.id ? 'text-[#D4AF37]' : 'text-white/40'}`}
+              >
+                {link.label}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setLoginModal(true)} className="bg-white/5 border border-white/10 text-white/60 px-6 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest hover:text-[#D4AF37] hover:bg-white/10 transition-all">Accès Chef</button>
+        </div>
+      </nav>
+
+      {/* Vues du site */}
+      <main>
+        {view === 'home' && (
+          <section className="h-screen relative flex items-center justify-center text-center px-6 overflow-hidden">
+            <div className="absolute inset-0 bg-black/60 z-10" />
+            <img src="https://images.unsplash.com/photo-1550966841-3ee5ad6e1e1f?w=1600" className="absolute inset-0 w-full h-full object-cover animate-slow-zoom" alt="Restaurant Interior" />
+            <div className="relative z-20 max-w-4xl animate-fade-up">
+              <span className="text-[#D4AF37] font-black uppercase tracking-[0.6em] text-xs mb-6 block">Haute Gastronomie • Villeurbanne</span>
+              <h1 className="text-7xl md:text-9xl font-serif text-white mb-10 leading-none">Chez <span className="text-[#D4AF37] italic">Yazid</span></h1>
+              <p className="text-white/70 text-lg md:text-2xl font-light tracking-[0.3em] mb-12 uppercase">Une immersion culinaire signée Yazid Youssouf</p>
+              <div className="flex flex-col sm:flex-row gap-6 justify-center">
+                <button onClick={() => setView('booking')} className="bg-[#D4AF37] text-black px-12 py-6 font-black uppercase tracking-widest hover:bg-white hover:scale-105 transition-all shadow-2xl">Réserver une table</button>
+                <button onClick={() => setView('menu')} className="border-2 border-white text-white px-12 py-6 font-black uppercase tracking-widest hover:bg-white hover:text-black hover:scale-105 transition-all">Consulter le menu</button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {view === 'menu' && (
+          <section className="py-40 bg-[#FBFBFA] px-6">
+            <div className="max-w-7xl mx-auto text-center mb-24">
+               <span className="text-[#D4AF37] font-black uppercase tracking-[0.5em] text-[10px]">L'Art du Goût</span>
+               <h2 className="text-6xl font-serif mt-6 text-[#1A1A1A]">Carte Signature</h2>
+               <div className="w-24 h-1 bg-[#D4AF37] mx-auto mt-8" />
+            </div>
+            <div className="max-w-7xl mx-auto grid md:grid-cols-2 lg:grid-cols-3 gap-12">
+              {menu.map(item => (
+                <div key={item.id} className="bg-white rounded-[3rem] overflow-hidden shadow-2xl shadow-black/5 group hover:-translate-y-3 transition-all duration-500 border border-gray-100">
+                  <div className="h-96 relative overflow-hidden">
+                    <img src={item.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" alt={item.name}/>
+                    <div className="absolute bottom-8 right-8 bg-[#1A1A1A] text-[#D4AF37] px-8 py-4 rounded-3xl font-black shadow-2xl text-xl">
+                      {item.price === "0" ? "0€" : "🐭"}
+                    </div>
+                    {item.isSpecial && (
+                       <div className="absolute top-8 left-8 bg-green-500 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest animate-pulse">
+                         Spécial Malhati
+                       </div>
+                    )}
+                  </div>
+                  <div className="p-10 text-center">
+                    <div className="flex justify-center gap-1 mb-4">
+                      <StarRating count={5}/>
+                    </div>
+                    <h3 className="text-3xl font-serif text-[#1A1A1A] mb-4">{item.name}</h3>
+                    <p className="text-gray-400 italic text-sm mb-8 leading-relaxed">"{item.description}"</p>
+                    <button onClick={() => setView('booking')} className="w-full py-5 rounded-2xl bg-gray-50 text-[10px] font-black uppercase tracking-widest hover:bg-[#1A1A1A] hover:text-[#D4AF37] transition-all">Je réserve ce plat</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {view === 'booking' && (
+          <section className="min-h-screen bg-[#1A1A1A] py-40 px-6 flex items-center">
+            <div className="max-w-6xl mx-auto w-full grid lg:grid-cols-2 gap-24 items-center">
+              <div className="text-white">
+                <span className="text-[#D4AF37] font-black uppercase tracking-[0.5em] text-xs">Instantané</span>
+                <h2 className="text-7xl font-serif mt-6 mb-8 leading-tight">Vivez <br/><span className="text-[#D4AF37]">L'Expérience</span></h2>
+                <p className="text-white/40 text-lg leading-relaxed mb-12 italic">"La cuisine est le coeur de la maison, mais ici, elle est l'âme de Villeurbanne." - Yazid</p>
+                <div className="space-y-6">
+                  <div className="flex items-center gap-6 p-6 bg-white/5 rounded-3xl border border-white/5">
+                    <Clock className="text-[#D4AF37]" size={28}/>
+                    <p className="font-bold uppercase tracking-widest text-xs">Ouvert 7j/7 • 12:00 — 23:30</p>
+                  </div>
+                  <div className="flex items-center gap-6 p-6 bg-white/5 rounded-3xl border border-white/5">
+                    <Mail className="text-[#D4AF37]" size={28}/>
+                    <p className="font-bold uppercase tracking-widest text-xs">Confirmation par email automatique</p>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white p-12 md:p-20 rounded-[4rem] shadow-2xl animate-fade-up">
+                 <form onSubmit={handleBooking} className="space-y-6">
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Nom du Client</label>
+                       <input name="name" required className="w-full p-5 bg-gray-50 rounded-2xl outline-none border-2 border-transparent focus:border-[#D4AF37]/20 transition-all"/>
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Email pour confirmation</label>
+                       <input name="email" type="email" required className="w-full p-5 bg-gray-50 rounded-2xl outline-none" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                         <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Date</label>
+                         <input name="date" type="date" required className="w-full p-5 bg-gray-50 rounded-2xl outline-none" />
+                      </div>
+                      <div className="space-y-2">
+                         <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Personnes</label>
+                         <input name="guests" type="number" min="1" max="12" required className="w-full p-5 bg-gray-50 rounded-2xl outline-none" />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Heure</label>
+                       <input name="time" type="time" required className="w-full p-5 bg-gray-50 rounded-2xl outline-none" />
+                    </div>
+                    <button className="w-full bg-[#1A1A1A] text-[#D4AF37] py-6 rounded-2xl font-black uppercase tracking-[0.3em] shadow-xl hover:scale-[1.02] transition-all">Valider la Réservation 🐭</button>
+                 </form>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {view === 'contact' && (
+          <section className="py-40 px-6 max-w-7xl mx-auto">
+            <div className="grid lg:grid-cols-2 gap-24 items-center">
+               <div>
+                  <h2 className="text-6xl font-serif mb-12 text-[#1A1A1A]">Le Salon de <br/>Yazid Youssouf</h2>
+                  <div className="space-y-12">
+                    <div className="flex gap-10 group">
+                      <div className="w-20 h-20 bg-gray-50 rounded-[2.5rem] flex items-center justify-center text-[#D4AF37] group-hover:bg-[#1A1A1A] transition-all duration-500 shadow-sm"><MapPin size={32}/></div>
+                      <div>
+                        <h4 className="font-bold text-2xl mb-2 text-[#1B2559]">L'Adresse</h4>
+                        <p className="text-gray-400 leading-relaxed italic">124B Rue Léon Blum, 69100 Villeurbanne, France</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-10 group">
+                      <div className="w-20 h-20 bg-gray-50 rounded-[2.5rem] flex items-center justify-center text-[#D4AF37] group-hover:bg-[#1A1A1A] transition-all duration-500 shadow-sm"><Phone size={32}/></div>
+                      <div>
+                        <h4 className="font-bold text-2xl mb-2 text-[#1B2559]">Réservation Directe</h4>
+                        <a href="tel:0621194718" className="text-gray-400 hover:text-black text-xl transition-colors">06 21 19 47 18</a>
+                      </div>
+                    </div>
+                  </div>
+               </div>
+               <div className="h-[700px] rounded-[4rem] overflow-hidden shadow-2xl border-8 border-white">
+                  <iframe title="Map" width="100%" height="100%" src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2783.315152865768!2d4.8824227!3d45.7644!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zNDXCsDQ1JzUxLjgiTiA0wrA1Mic1Ni43IkU!5e0!3m2!1sfr!2sfr!4v1625580000000" />
+               </div>
+            </div>
+          </section>
+        )}
+      </main>
+
+      {/* Footer Pro */}
+      <footer className="bg-[#0B0B0B] py-32 px-6 border-t border-white/5">
+        <div className="max-w-7xl mx-auto flex flex-col items-center">
+          <div className="flex items-center gap-4 mb-16">
+            <div className="w-16 h-16 bg-[#D4AF37] rounded-2xl flex items-center justify-center text-black shadow-xl shadow-[#D4AF37]/10"><ChefHat size={32}/></div>
+            <span className="text-white text-5xl font-serif italic tracking-tighter">Chez Yazid</span>
+          </div>
+          <div className="flex gap-10 mb-16">
+             <a href="#" className="w-16 h-16 rounded-3xl border border-white/5 flex items-center justify-center text-gray-500 hover:bg-[#D4AF37] hover:text-black transition-all"><Instagram size={24}/></a>
+             <a href="#" className="w-16 h-16 rounded-3xl border border-white/5 flex items-center justify-center text-gray-500 hover:bg-[#D4AF37] hover:text-black transition-all"><Facebook size={24}/></a>
+          </div>
+          <div className="text-center space-y-4">
+             <p className="text-white/20 text-[10px] font-black uppercase tracking-[1em]">Yazid Youssouf — Lyon • Villeurbanne</p>
+             <p className="text-white/10 text-[8px] font-medium tracking-widest">© 2024 TOUS DROITS RÉSERVÉS</p>
+          </div>
+        </div>
+      </footer>
+
+      {/* Login Modal */}
+      {loginModal && (
+        <div className="fixed inset-0 bg-black/95 z-[500] flex items-center justify-center p-6 backdrop-blur-3xl animate-fade-in">
+          <div className="bg-white p-12 md:p-24 rounded-[4rem] max-w-md w-full text-center relative shadow-2xl">
+            <button onClick={() => setLoginModal(false)} className="absolute top-10 right-10 text-gray-300 hover:text-black transition-colors"><X size={28}/></button>
+            <div className="bg-[#1B2559] w-24 h-24 rounded-[2.5rem] flex items-center justify-center text-[#D4AF37] mx-auto mb-10 shadow-2xl">
+              <Shield size={44}/>
+            </div>
+            <h3 className="text-3xl font-serif mb-2 text-[#1B2559]">Accès Sécurisé</h3>
+            <p className="text-[10px] text-gray-400 mb-12 uppercase font-black tracking-widest">Panneau d'administration Yazid</p>
+            <div className="space-y-6">
+              <input 
+                type="password" 
+                placeholder="••••" 
+                className="w-full bg-gray-50 p-6 rounded-[1.5rem] text-center text-4xl tracking-[0.5em] outline-none border-2 border-transparent focus:border-blue-500/20 transition-all font-mono" 
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                onKeyPress={e => e.key === 'Enter' && password === ADMIN_PASS && setIsAdmin(true)}
+              />
+              <button 
+                onClick={() => password === ADMIN_PASS ? setIsAdmin(true) : alert("Code Incorrect")}
+                className="w-full bg-[#1B2559] text-white py-6 rounded-[1.5rem] font-black uppercase tracking-[0.3em] hover:bg-black transition-all shadow-xl"
+              >
+                Ouvrir le Panneau
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GUIDE HÉBERGEMENT (Visible seulement en bas de page pour le dev) */}
+      <div className="bg-gray-100 p-10 border-t border-gray-200">
+         <div className="max-w-4xl mx-auto">
+            <h4 className="font-bold text-xl mb-6 text-[#1B2559] flex items-center gap-2"><Globe size={24}/> Guide d'hébergement Yazid</h4>
+            <div className="grid md:grid-cols-3 gap-8">
+               <div className="bg-white p-6 rounded-2xl shadow-sm">
+                  <div className="font-black text-blue-500 text-3xl mb-4">01</div>
+                  <p className="text-sm font-bold mb-2">Copie du Code</p>
+                  <p className="text-xs text-gray-400">Cliquez sur l'icône de copie en haut du fichier pour récupérer tout ce code.</p>
+               </div>
+               <div className="bg-white p-6 rounded-2xl shadow-sm">
+                  <div className="font-black text-blue-500 text-3xl mb-4">02</div>
+                  <p className="text-sm font-bold mb-2">Vercel / Netlify</p>
+                  <p className="text-xs text-gray-400">Créez un compte gratuit. Déposez ce fichier sous le nom `index.jsx` ou collez-le dans leur éditeur direct.</p>
+               </div>
+               <div className="bg-white p-6 rounded-2xl shadow-sm">
+                  <div className="font-black text-blue-500 text-3xl mb-4">03</div>
+                  <p className="text-sm font-bold mb-2">Lien Live</p>
+                  <p className="text-xs text-gray-400">Une fois publié, ils vous donneront un lien type `chez-yazid.vercel.app` que vous pourrez mettre dans votre bio Instagram.</p>
+               </div>
+            </div>
+         </div>
+      </div>
+    </div>
+  );
+}
+
+const StarRating = ({ count }) => (
+  <div className="flex gap-0.5">
+    {[...Array(5)].map((_, i) => (
+      <Star key={i} size={14} className={i < count ? "fill-[#D4AF37] text-[#D4AF37]" : "text-gray-200"} />
+    ))}
+  </div>
+);
+
+// --- ANIMATIONS CSS ---
+const style = document.createElement('style');
+style.innerHTML = `
+  @keyframes slow-zoom { from { transform: scale(1.05); } to { transform: scale(1.15); } }
+  .animate-slow-zoom { animation: slow-zoom 20s infinite alternate ease-in-out; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
+  .animate-fade-up { animation: fadeUp 1s cubic-bezier(0.165, 0.84, 0.44, 1) both; }
+  @keyframes bounceIn { 
+    0% { transform: translate(-50%, 100px); opacity: 0; }
+    70% { transform: translate(-50%, -10px); opacity: 1; }
+    100% { transform: translate(-50%, 0); opacity: 1; }
+  }
+  .animate-bounce-in { animation: bounceIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) both; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .animate-fade-in { animation: fadeIn 0.4s ease-out; }
+`;
+document.head.appendChild(style);
+
